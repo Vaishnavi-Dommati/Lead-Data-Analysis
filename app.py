@@ -9,10 +9,12 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+load_dotenv()  # loads variables from .env file
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-load_dotenv()  # loads variables from .env file
+# Load Whisper model once globally to avoid re-loading every request
+model = whisper.load_model("tiny")
 
 
 def analyze_text_possibility_and_reason(text):
@@ -50,6 +52,28 @@ def parse_possibility_and_reason(output_text):
             reason = line.split(":", 1)[1].strip()
     return possibility, reason
 
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    # Read raw text from the body
+    text = request.data.decode('utf-8').strip()
+    if not text:
+        return jsonify({"error": "Empty request body"}), 400
+
+    try:
+        output = analyze_text_possibility_and_reason(text)
+        possibility, reason = parse_possibility_and_reason(output)
+        if possibility is None or reason is None:
+            return jsonify({"error": "Could not parse model output"}), 500
+        return jsonify({
+            "possibility": possibility,
+            "reason": reason
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+
 
 
 ###############################
@@ -85,38 +109,12 @@ def generate_transcription_with_timestamps(result):
 def transcribe_audio(file_path):
     """Transcribes an audio file using Whisper and returns the transcription with timestamps in a single text."""
     print(f"Transcribing audio file: {file_path}")
-    model = whisper.load_model("tiny")
     result = model.transcribe(file_path, task="translate", verbose=False)
     
     # Generate transcription with timestamps combined
     transcription_with_timestamps = generate_transcription_with_timestamps(result)
     
     return transcription_with_timestamps
-
-
-##########################################
-# Original Main Execution (Unchanged)    #
-##########################################
-
-
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    # Read raw text from the body
-    text = request.data.decode('utf-8').strip()
-    if not text:
-        return jsonify({"error": "Empty request body"}), 400
-
-    try:
-        output = analyze_text_possibility_and_reason(text)
-        possibility, reason = parse_possibility_and_reason(output)
-        if possibility is None or reason is None:
-            return jsonify({"error": "Could not parse model output"}), 500
-        return jsonify({
-            "possibility": possibility,
-            "reason": reason
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 ##################################
 # API Endpoint for Transcription #
@@ -140,12 +138,51 @@ def transcribe():
         
         # Step 2: Transcribe the downloaded audio file
         transcription_with_timestamps = transcribe_audio(audio_file_path)
+
+        # Clean up the temp file after transcription
+        os.remove(audio_file_path)
+
         
         # Return the combined transcription with timestamps as a JSON object
         return jsonify({'transcription_with_timestamps': transcription_with_timestamps})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+##################################
+# API Endpoint for Transcription #
+##################################
+
+@app.route('/transcribe', methods=['POST'])
+def transcribe():
+    """
+    API endpoint that accepts a POST request with JSON body containing a "url" key.
+    Returns a JSON object with 'transcription_with_timestamps' as a single text.
+    """
+    data = request.get_json()
+    if not data or 'url' not in data:
+        return jsonify({'error': 'Missing URL parameter in JSON body'}), 400
+    
+    audio_url = data['url']
+    
+    try:
+        # Step 1: Download the audio file
+        audio_file_path = download_audio_from_url(audio_url)
+        
+        # Step 2: Transcribe the downloaded audio file
+        transcription_with_timestamps = transcribe_audio(audio_file_path)
+
+        # After transcription
+        os.remove(audio_file_path)
+
+        
+        # Return the combined transcription with timestamps as a JSON object
+        return jsonify({'transcription_with_timestamps': transcription_with_timestamps})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/')
 def home():
