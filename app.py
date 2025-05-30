@@ -139,40 +139,6 @@ def transcribe():
         # Step 2: Transcribe the downloaded audio file
         transcription_with_timestamps = transcribe_audio(audio_file_path)
 
-        # Clean up the temp file after transcription
-        os.remove(audio_file_path)
-
-        
-        # Return the combined transcription with timestamps as a JSON object
-        return jsonify({'transcription_with_timestamps': transcription_with_timestamps})
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-##################################
-# API Endpoint for Transcription #
-##################################
-
-@app.route('/transcribe', methods=['POST'])
-def transcribe():
-    """
-    API endpoint that accepts a POST request with JSON body containing a "url" key.
-    Returns a JSON object with 'transcription_with_timestamps' as a single text.
-    """
-    data = request.get_json()
-    if not data or 'url' not in data:
-        return jsonify({'error': 'Missing URL parameter in JSON body'}), 400
-    
-    audio_url = data['url']
-    
-    try:
-        # Step 1: Download the audio file
-        audio_file_path = download_audio_from_url(audio_url)
-        
-        # Step 2: Transcribe the downloaded audio file
-        transcription_with_timestamps = transcribe_audio(audio_file_path)
-
         # After transcription
         os.remove(audio_file_path)
 
